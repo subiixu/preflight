@@ -24,6 +24,15 @@ And stay honest:
 - A few findings you're sure of beat many you're not. If a check is healthy, say so in one line and move on.
 - In a large project, go deep on the core that does most of the work, and say which areas got a lighter look.
 
+## Every run brief gets an answer in results.json
+
+The Preflight tab knows a run is over only when `results.json` says so, so every Preflight run brief must end with a write to it, whatever you decide:
+
+- A run brief always runs the checks it lists, even if little has changed since the last run. The user pressed Run because they want a fresh answer.
+- The one exception is a duplicate: the same checks sent again within about 15 minutes, or while that run is still going. Run once, and answer both.
+- When you finish a run, set `run_id` to the brief's run id, and add every run id you answered (the run itself and any duplicates) to `answered`, keeping the 20 most recent.
+- If a run brief arrives and you can't run it (no workers, the project doesn't build), still add its id to `answered`, and say why in your reply.
+
 ## Before you start
 
 1. Read `.araniko/plugins/preflight/project.md`. If it's missing or clearly out of date, rebuild it as `on.md` step 1 and 2 describe, then continue.
@@ -37,12 +46,73 @@ Give each check its own worker, with its own small brief. One check per worker k
 - the check, and the guide to follow: `checks/<id>.md` in this skill's folder
 - the "How to think" rules above
 - the `depth` and `audience` settings
-- "Report only. Don't change any file except your handoff."
+- "Report only. Don't change any file except your handoff and your progress file."
+- the progress-file rules from "Live progress" below, with the run id and the file path filled in as an **absolute path** in your own checkout (`$(git rev-parse --show-toplevel)/.araniko/plugins/preflight/progress/<check id>.json`, run in your checkout, not the worker's). A worker in its own worktree that wrote a relative path would write where the tab can't see it.
 - "Return your findings in the shape below, plus up to three things this area does well, then stop."
 
 If the project is small (under about 50 source files), you may run two or three related checks in one worker. Never more than three.
 
 The check ids: `security`, `database`, `bugs`, `tests`, `reliability`, `code`, `ux`, `accessibility`, `speed`, `launch-basics`.
+
+## Live progress
+
+The Preflight tab shows a run as it happens, from two kinds of file in `.araniko/plugins/preflight/`. Write them in the main checkout, never in a worker's own copy, so the tab can see them. Both are kept out of git by the `.gitignore` block.
+
+### `progress.json`: you (Nayo) keep this one
+
+Write it when the run starts, every time you hand a check to a worker, every time a worker reports back, and when the run ends. Replace the whole file each time.
+
+```json
+{
+  "version": 1,
+  "run_id": "run-20261127T034200",
+  "state": "running",
+  "started_at": "2026-11-27T18:21:00+11:00",
+  "updated_at": "2026-11-27T18:26:10+11:00",
+  "workers": 3,
+  "checks": [
+    { "id": "security", "state": "running", "worker": "Worker 1", "started_at": "2026-11-27T18:21:20+11:00" },
+    { "id": "database", "state": "done", "worker": "Worker 2", "started_at": "2026-11-27T18:21:20+11:00", "finished_at": "2026-11-27T18:26:05+11:00",
+      "status": "review", "summary": "3 to review", "score": 76, "blocking": 0, "review": 3,
+      "found": [ { "level": "review", "title": "No backup you can restore, and dev and prod share one database" } ] },
+    { "id": "tests", "state": "waiting" }
+  ],
+  "log": [
+    { "at": "2026-11-27T18:21:00+11:00", "text": "Got the brief: 10 checks, for the public, thorough" },
+    { "at": "2026-11-27T18:26:05+11:00", "text": "Database finished: 3 to review" }
+  ]
+}
+```
+
+- `state` is `running`, `done` (the results are written) or `stopped`.
+- Each check's `state` is `waiting`, `running`, `done`, `could-not-check` or `stopped`. List every picked check from the start, `waiting` until a worker has it.
+- `worker` is a short plain name, like "Worker 1". Number workers by slot, so the same name comes back when a slot takes its next check.
+- When a check is done, copy its `status`, `summary`, `score` and finding counts from the worker's report, and its findings into `found` as `level` and `title` only.
+- `log` is short plain lines, oldest first, at most 30: the brief arriving, each check starting and finishing, merging, writing the report, stopping.
+- Write `run_id` and `state: "done"` in the same write as the final `results.json`, or straight after it.
+
+### `progress/<check id>.json`: each worker keeps its own
+
+Tell each worker to write this file as it works:
+
+```json
+{
+  "run_id": "run-20261127T034200",
+  "check": "security",
+  "steps": ["Listing every API route", "Following 3 routes from request to database", "Checking logins, resets and sessions", "Running the package audit"],
+  "step": 2,
+  "updated_at": "2026-11-27T18:23:40+11:00",
+  "found": { "blocking": 0, "review": 2 }
+}
+```
+
+- At the start, the worker plans 3 to 6 steps in plain words, from its check guide, and writes them with `step: 1`.
+- Each time it moves on, it raises `step` and updates `found`. Never more often than every 30 seconds or so.
+- If a worker can't write it, carry on. The tab then shows only "Running" for that check.
+
+## Stopping a run
+
+When a brief says "Stop Preflight run `<id>`": tell every worker on that run to stop, mark checks that hadn't finished as `stopped` and the run as `stopped` in `progress.json`, add the run id to `answered` in `results.json`, and leave the last results as they were. Reply in one line saying what was stopped.
 
 ## What each check returns
 
@@ -78,6 +148,8 @@ When every worker is done, you (not a worker) write the results in the main chec
    ```json
    {
      "version": 2,
+     "run_id": "run-20261127T034200",
+     "answered": ["run-20261127T034200", "run-20261127T034300"],
      "started_at": "2026-11-27T14:14:00+11:00",
      "finished_at": "2026-11-27T14:41:00+11:00",
      "settings": { "audience": "The public", "depth": "Thorough" },

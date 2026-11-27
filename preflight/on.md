@@ -35,6 +35,8 @@ Don't run any checks now. This step only sets things up.
    .araniko/plugins/preflight/results.json
    .araniko/plugins/preflight/report.md
    .araniko/plugins/preflight/runs/
+   .araniko/plugins/preflight/progress.json
+   .araniko/plugins/preflight/progress/
    # /plugin:preflight
    ```
 

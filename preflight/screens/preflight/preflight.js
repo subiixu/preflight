@@ -43,6 +43,8 @@
     picker: false,
     moreDecisions: false,
     sending: false,
+    progress: null,  // progress.json: the run as it happens (Nayo keeps it)
+    steps: {},       // check id -> progress/<id>.json (each worker keeps its own)
   };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -126,26 +128,64 @@
 
   // ---------- The latest run ----------
   function lastRun() { return s.runs[0] || null; }
+  // progress.json, when it belongs to the latest run.
+  function live() {
+    var r = lastRun(), p = s.progress;
+    if (!r || !p || !Array.isArray(p.checks)) return null;
+    if (r.id && p.run_id) return p.run_id === r.id ? p : null;
+    return new Date(p.started_at || 0) >= new Date(new Date(r.at).getTime() - 2 * 60000) ? p : null;
+  }
   function running() {
     var r = lastRun();
     if (!r || r.done) return false;
-    if (!s.canRead && !DEMO && Date.now() - new Date(r.at).getTime() > RUN_MAX_MS) return false;
+    if (Date.now() - new Date(r.at).getTime() > RUN_MAX_MS) return false;
+    var p = live();
+    if (p && (p.state === "done" || p.state === "stopped")) return false;
     var res = s.results;
-    if (!res || !res.finished_at) return true;
+    if (!res) return true;
+    // Nayo marks a run as answered even when it decides not to re-run (a duplicate send).
+    if (r.id && (res.run_id === r.id || (Array.isArray(res.answered) && res.answered.indexOf(r.id) !== -1))) return false;
+    if (!res.finished_at) return true;
     return new Date(r.at) > new Date(res.finished_at);
+  }
+  // A run Nayo hasn't started after 10 minutes: busy with other work, or the brief was lost
+  // (for example when Preflight was turned off and on, which clears its folder).
+  function notStarted() {
+    var r = lastRun();
+    return running() && s.canRead && !live() && Date.now() - new Date(r.at).getTime() > 10 * 60000;
+  }
+  // "Forget this run" shows when the tab can't see the end of a run, Nayo hasn't started it, or it's taking long.
+  function canMarkFinished() {
+    var r = lastRun();
+    return running() && (!s.canRead || notStarted() || Date.now() - new Date(r.at).getTime() > 45 * 60000);
   }
 
   // ---------- Head ----------
   function renderHead() {
     var h = $("headline"), p = $("summary"), meta = $("meta"), r = s.results, run = lastRun(), going = running();
-    $("finish").hidden = !going || s.canRead || DEMO;
+    $("finish").hidden = DEMO || !canMarkFinished();
     meta.hidden = true;
+    var stop = $("stop");
+    stop.hidden = !going || !(s.canRead || DEMO);
+    stop.disabled = !!(run && run.stopping);
+    stop.textContent = run && run.stopping ? "Stopping…" : "Stop the run";
     if (going) {
+      var pg = live();
       h.dataset.verdict = "running";
       h.textContent = "Checking " + run.checks.length + (run.checks.length === 1 ? " thing" : " things");
-      p.textContent = "Started " + ago(run.at) + ". " + (s.canRead || DEMO
-        ? "Results show here as soon as Nayo is done." + (r ? " Below are the last results." : "")
-        : "Nayo is working on it and replies in its tab with the verdict.");
+      if (pg) {
+        var c = counts(pg);
+        var bits2 = [c.done + " of " + pg.checks.length + " done", "started " + ago(pg.started_at || run.at)];
+        var left = estimate(pg);
+        if (left) bits2.push("about " + left + " left");
+        p.textContent = bits2.join(" · ").replace(/^./, function (x) { return x.toUpperCase(); });
+      } else {
+        p.textContent = notStarted()
+          ? "Sent " + ago(run.at) + ", but Nayo hasn't started it. It may be busy with other work. If it's been too long, forget this run and press Run again."
+          : "Started " + ago(run.at) + ". " + (s.canRead || DEMO
+            ? "Waiting for Nayo to hand out the checks."
+            : "Nayo is working on it and replies in its tab with the verdict.");
+      }
     } else if (r) {
       h.dataset.verdict = r.verdict || "none";
       h.textContent = r.headline || "Results";
@@ -198,8 +238,8 @@
   // ---------- Summary ----------
   function renderStats() {
     var r = s.results;
-    $("stats").hidden = !r;
-    if (!r) return;
+    $("stats").hidden = !r || running();
+    if (!r || running()) return;
     var open = R.open();
     var score = $("score");
     score.textContent = r.score == null ? "–" : String(r.score);
@@ -249,6 +289,13 @@
   // ---------- Views ----------
   function renderViews() {
     var has = !!s.results;
+    if (running() && (s.canRead || DEMO)) {
+      $("views").hidden = true;
+      var lb = $("view");
+      lb.textContent = "";
+      lb.appendChild(liveView());
+      return;
+    }
     $("views").hidden = !has;
     ["findings", "plan", "about"].forEach(function (v) {
       var b = $("tab-" + v);
@@ -259,6 +306,130 @@
     box.textContent = "";
     if (!has) { box.appendChild(noResults()); return; }
     box.appendChild(s.view === "plan" ? planView() : s.view === "about" ? aboutView() : findingsView());
+  }
+
+  // ---------- The run as it happens ----------
+  function counts(pg) {
+    var c = { done: 0, running: 0, waiting: 0, blocking: 0, review: 0 };
+    pg.checks.forEach(function (k) {
+      if (k.state === "done" || k.state === "could-not-check") { c.done++; c.blocking += k.blocking || 0; c.review += k.review || 0; }
+      else if (k.state === "running") c.running++;
+      else if (k.state !== "stopped") c.waiting++;
+    });
+    return c;
+  }
+  function mins(a, b) { return Math.max(0, Math.round(((b ? new Date(b) : new Date()) - new Date(a)) / 60000)); }
+  // A rough time left, from how long finished checks took. Only once one has finished.
+  function estimate(pg) {
+    var took = pg.checks.filter(function (k) { return k.state === "done" && k.started_at && k.finished_at; })
+      .map(function (k) { return mins(k.started_at, k.finished_at); });
+    if (!took.length) return "";
+    var avg = Math.max(1, took.reduce(function (a, b) { return a + b; }, 0) / took.length);
+    var workers = Math.max(1, pg.workers || 3);
+    var waiting = pg.checks.filter(function (k) { return k.state === "waiting"; }).length;
+    var runningLeft = pg.checks.filter(function (k) { return k.state === "running"; })
+      .map(function (k) { return Math.max(1, avg - mins(k.started_at || pg.started_at)); });
+    var m = Math.round(Math.max.apply(null, runningLeft.concat([0])) + Math.ceil(waiting / workers) * avg);
+    return m < 1 ? "" : m < 60 ? m + " min" : Math.floor(m / 60) + " h " + (m % 60) + " min";
+  }
+  function stepOf(id) {
+    var f = s.steps[id], run = lastRun();
+    if (!f || !Array.isArray(f.steps) || !f.steps.length) return null;
+    if (run && run.id && f.run_id && f.run_id !== run.id) return null;
+    var n = Math.min(f.steps.length, Math.max(1, f.step || 1));
+    return { text: f.steps[n - 1], pct: Math.round(((n - 0.5) / f.steps.length) * 100), found: f.found || null };
+  }
+
+  function liveView() {
+    var pg = live();
+    var run = lastRun();
+    var wrap = el("div", "live");
+    var rows = pg ? pg.checks : run.checks.map(function (id) { return { id: id, state: "waiting" }; });
+    var c = pg ? counts(pg) : { done: 0, running: 0, waiting: rows.length, blocking: 0, review: 0 };
+
+    var bar = el("div", "live-bar");
+    bar.setAttribute("aria-hidden", "true");
+    rows.forEach(function (k) {
+      var cls = k.state === "done" || k.state === "could-not-check" ? (k.blocking ? "blocked" : "done") : k.state === "running" ? "running" : "";
+      bar.appendChild(el("span", cls));
+    });
+    wrap.appendChild(bar);
+
+    var stats = el("div", "stats");
+    [["Done", c.done, " of " + rows.length, ""], ["Running now", c.running, c.running === 1 ? " worker busy" : " workers busy", "run"],
+     ["Blocking so far", c.blocking, "", "blocked"], ["To review so far", c.review, "", ""]].forEach(function (x) {
+      var v = el("div", "stat-value " + x[3], String(x[1]));
+      if (x[2]) v.appendChild(el("span", "of", x[2]));
+      stats.appendChild(add(el("div", "stat"), el("div", "stat-label", x[0]), v));
+    });
+    wrap.appendChild(stats);
+
+    var cols = el("div", "cols");
+    var left = el("section", "live-checks");
+    left.setAttribute("aria-label", "Checks");
+    var list = el("div", "card");
+    rows.forEach(function (k) {
+      var row = el("div", "lrow " + (k.state || "waiting") + (k.blocking ? " blocked" : ""));
+      var mark = el("span", "lmark");
+      if (k.state === "running") mark.appendChild(el("span", "spin"));
+      else if (k.state === "done" || k.state === "could-not-check") { var d = icon("done"); if (d) mark.appendChild(d); }
+      else mark.appendChild(el("span", "dot"));
+      var body = el("div", "lbody");
+      var top = add(el("div", "ltop"), el("span", "lname", NAMES[k.id] || k.id));
+      var sub, right = "", st = k.state === "running" ? stepOf(k.id) : null;
+      if (k.state === "running") {
+        var m0 = mins(k.started_at || pg.started_at);
+        top.appendChild(el("span", "lwho", (k.worker ? k.worker + " · " : "") + (m0 < 1 ? "just started" : m0 + " min")));
+        sub = st ? st.text + "…" : "Running";
+        if (st) right = st.pct + "%";
+      } else if (k.state === "done") {
+        top.appendChild(el("span", "lwho", k.started_at && k.finished_at ? "took " + Math.max(1, mins(k.started_at, k.finished_at)) + " min" : ""));
+        sub = (STATUS_WORD[k.status] || "Done") + (k.summary ? " · " + k.summary : "");
+        right = k.score != null ? String(k.score) : "–";
+      } else if (k.state === "could-not-check") {
+        sub = "Couldn't check" + (k.summary ? " · " + k.summary : "");
+        right = "–";
+      } else if (k.state === "stopped") {
+        sub = "Stopped";
+      } else {
+        sub = pg ? "Waiting for a free worker" : "Waiting for Nayo";
+      }
+      add(body, top, el("div", "lsub" + (k.status === "blocked" ? " blocked" : ""), sub));
+      if (st) { var pb = el("div", "lprog"); var fill = el("span"); fill.style.width = st.pct + "%"; pb.appendChild(fill); body.appendChild(pb); }
+      add(row, mark, icon(k.id), body, el("span", "lright", right));
+      list.appendChild(row);
+    });
+    add(left, add(el("div", "col-head"), el("h2", null, "Checks")), list,
+      el("p", "note", "Nayo runs up to " + ((pg && pg.workers) || 3) + " checks at once, one worker each. The others wait for a free worker."));
+
+    var rightCol = el("section", "live-side");
+    var found = [];
+    rows.forEach(function (k) {
+      (k.found || []).forEach(function (f) { found.push({ level: f.level, title: f.title, check: NAMES[k.id] || k.id, at: k.finished_at }); });
+    });
+    found.sort(function (a, b) { return (a.level === "blocking" ? 0 : 1) - (b.level === "blocking" ? 0 : 1) || new Date(b.at || 0) - new Date(a.at || 0); });
+    var fl = el("div", "card list");
+    if (!found.length) fl.appendChild(el("p", "lempty", "Findings appear here as each check finishes."));
+    found.slice(0, 6).forEach(function (f) {
+      fl.appendChild(add(el("div", "lfind"), el("div", "llevel " + (f.level === "blocking" ? "blocked" : "review"), f.level === "blocking" ? "Blocking launch" : "Review"),
+        el("div", "ltitle", f.title), el("div", "lcheck", f.check + (f.at ? " · " + time(f.at).replace("Today, ", "") : ""))));
+    });
+    var fsec = add(el("div"), add(el("div", "col-head"), el("h2", null, "Found so far")), fl);
+    if (c.blocking + c.review > Math.min(6, found.length)) fsec.appendChild(el("p", "note", (c.blocking + c.review - Math.min(6, found.length)) + " more so far. The full list opens when the run is done."));
+    rightCol.appendChild(fsec);
+
+    var log = (pg && Array.isArray(pg.log) ? pg.log : []).slice(-7).reverse();
+    var ll = el("div", "card list");
+    if (!log.length) ll.appendChild(el("p", "lempty", "Nayo hasn't started yet."));
+    log.forEach(function (x) {
+      ll.appendChild(add(el("div", "llog"), el("span", "lat", time(x.at).replace("Today, ", "")), el("span", null, x.text)));
+    });
+    rightCol.appendChild(add(el("div"), add(el("div", "col-head"), el("h2", null, "What Nayo is doing")), ll));
+
+    add(cols, left, rightCol);
+    wrap.appendChild(cols);
+    wrap.appendChild(el("p", "note", "This updates on its own as Nayo's workers report in. You can leave the tab and come back."));
+    return wrap;
   }
 
   function noResults() {
@@ -477,11 +648,13 @@
     setStatus("");
     render();
     var picked = s.picked.slice();
+    var id = "run-" + new Date().toISOString().replace(/[-:]/g, "").replace(/\..*$/, "");
     Promise.resolve(typeof A.settings === "function" ? A.settings() : {}).catch(function () { return {}; }).then(function (set) {
       set = set || {};
       var brief = [
         "Run Preflight on this project with the `run-preflight` skill.",
         "",
+        "Run id: `" + id + "`. Write it as `run_id` in results.json, and add it to `answered` there even if you don't re-run.",
         "Checks to run: " + picked.map(function (id) { return NAMES[id] + " (`" + id + "`)"; }).join(", ") + ".",
         "Settings: audience is \"" + (set.audience || "The public") + "\", depth is \"" + (set.depth || "Thorough") + "\".",
         "",
@@ -490,7 +663,7 @@
       ].join("\n");
       return send("Preflight: check " + picked.length + (picked.length === 1 ? " thing" : " things") + " before launch", brief);
     }).then(function () {
-      s.runs = [{ at: new Date().toISOString(), checks: picked }].concat(s.runs).slice(0, 10);
+      s.runs = [{ id: id, at: new Date().toISOString(), checks: picked }].concat(s.runs).slice(0, 10);
       s.picker = false;
       save("runs", s.runs);
       setStatus("Sent to Nayo.");
@@ -498,6 +671,20 @@
     }, function (e) {
       setStatus(errorText(e), true);
     }).then(function () { s.sending = false; render(); });
+  }
+
+  function stopRun(b) {
+    var r = lastRun();
+    if (!r || r.stopping) return;
+    if (DEMO) { setStatus("Open Preflight in Araniko to stop a run."); return; }
+    if (!r.id) { r.done = true; save("runs", s.runs); render(); return; }
+    busy(b);
+    send("Preflight: stop the run", "Stop Preflight run `" + r.id + "` with the `run-preflight` skill's \"Stopping a run\" steps.").then(function () {
+      r.stopping = true;
+      save("runs", s.runs);
+      setStatus("Asked Nayo to stop the run.");
+      render();
+    }, function (e) { setStatus(errorText(e), true); render(); });
   }
 
   function describe(f) {
@@ -561,9 +748,26 @@
       return r && (r.version === 1 || r.version === 2) && Array.isArray(r.findings) ? r : null;
     }).catch(function () { return null; });
   }
+  function loadProgress() {
+    if (DEMO) { s.progress = /[?&]state=running\b/.test(location.search) ? demoProgress() : null; return Promise.resolve(); }
+    if (!s.canRead || !lastRun()) return Promise.resolve(null);
+    return A.files.read("progress.json").then(function (text) {
+      var p = text ? (typeof text === "string" ? JSON.parse(text) : text) : null;
+      s.progress = p && p.version === 1 ? p : null;
+      var pg = live();
+      if (!pg) return null;
+      var ids = pg.checks.filter(function (k) { return k.state === "running"; }).map(function (k) { return k.id; });
+      return Promise.all(ids.map(function (id) {
+        return A.files.read("progress/" + id + ".json").then(function (t) {
+          s.steps[id] = t ? (typeof t === "string" ? JSON.parse(t) : t) : null;
+        }, function () { s.steps[id] = null; });
+      }));
+    }).catch(function () { s.progress = null; });
+  }
   var last = "";
   function refresh() {
-    return loadResults().then(function (r) {
+    return Promise.all([loadResults(), lastRun() && !lastRun().done ? loadProgress() : null]).then(function (both) {
+      var r = both[0];
       var key = r ? (r.finished_at || "") + ":" + JSON.stringify(r).length : "";
       s.results = r;
       if (r && key !== last) {
@@ -584,6 +788,7 @@
 
   // ---------- Wiring ----------
   $("run").addEventListener("click", run);
+  $("stop").addEventListener("click", function (e) { stopRun(e.currentTarget); });
   $("choose").addEventListener("click", function () { s.picker = !s.picker; render(); });
   $("toggleAll").addEventListener("click", function () {
     s.picked = s.picked.length === ALL.length ? [] : ALL.slice();
@@ -594,6 +799,7 @@
     if (!lastRun()) return;
     s.runs[0].done = true;
     save("runs", s.runs);
+    setStatus("");
     render();
   });
   $("moreDecisions").addEventListener("click", function () { s.moreDecisions = !s.moreDecisions; render(); });
@@ -612,7 +818,7 @@
     var b = $("run"), i = icon("send"), slot = b.querySelector("[data-icon]");
     if (i && slot) slot.replaceWith(i);
   })();
-  setInterval(function () { if (running() && !document.hidden) render(); }, 30000);
+  setInterval(function () { if (lastRun() && !lastRun().done && !document.hidden) render(); }, 30000);
 
   function boot() {
     s.canRead = !!(A && A.files && typeof A.files.read === "function");
@@ -629,7 +835,9 @@
       loads.push(load("decided").then(function (v) { if (v && typeof v === "object" && !Array.isArray(v)) s.decided = v; }, function () {}));
     }
     if (DEMO && /[?&]state=running\b/.test(location.search)) {
-      s.runs = [{ at: new Date(Date.now() - 12 * 60000).toISOString(), checks: ALL.slice(0, 6) }];
+      s.runs = [{ id: "run-demo", at: new Date(Date.now() - 7 * 60000).toISOString(), checks: ALL.slice() }];
+      s.steps = { reliability: { run_id: "run-demo", steps: ["Listing outside services", "Checking timeouts and retries", "Looking for error pages", "Checking logs and alerts"], step: 1 },
+        code: { run_id: "run-demo", steps: ["Measuring the longest functions", "Looking for type checks switched off", "Finding unused files"], step: 1 } };
     }
     render();
     Promise.all(loads).then(refresh).then(function () {
@@ -641,6 +849,35 @@
       setInterval(function () { if (!document.hidden && running()) refresh(); }, POLL_MS);
       document.addEventListener("visibilitychange", function () { if (!document.hidden) refresh(); });
     });
+  }
+
+  function demoProgress() {
+    var t0 = Date.now() - 7 * 60000, at = function (m) { return new Date(t0 + m * 60000).toISOString(); };
+    var done = function (id, w, s0, e, status, summary, score, b, r, found) {
+      return { id: id, state: "done", worker: w, started_at: at(s0), finished_at: at(e), status: status, summary: summary, score: score, blocking: b, review: r, found: found };
+    };
+    return {
+      version: 1, run_id: "run-demo", state: "running", started_at: at(0), updated_at: at(7), workers: 3,
+      checks: [
+        done("security", "Worker 1", 0, 6, "review", "1 to review", 92, 0, 1, [{ level: "review", title: "Login has no limit on attempts" }]),
+        done("database", "Worker 2", 0, 5, "blocked", "1 blocking", 75, 1, 0, [{ level: "blocking", title: "Anyone signed in can read every household" }]),
+        { id: "bugs", state: "running", worker: "Worker 3", started_at: at(0) },
+        { id: "tests", state: "done", worker: "Worker 2", started_at: at(5), finished_at: at(7), status: "review", summary: "1 to review", score: 92, blocking: 0, review: 1, found: [{ level: "review", title: "Every push deploys without running tests" }] },
+        { id: "reliability", state: "running", worker: "Worker 1", started_at: at(6) },
+        { id: "code", state: "running", worker: "Worker 2", started_at: at(7) },
+        { id: "ux", state: "waiting" }, { id: "accessibility", state: "waiting" }, { id: "speed", state: "waiting" }, { id: "launch-basics", state: "waiting" },
+      ],
+      log: [
+        { at: at(0), text: "Got the brief: 10 checks, for the public, thorough" },
+        { at: at(0), text: "Security, Database and Bugs started" },
+        { at: at(5), text: "Database finished: 1 blocking" },
+        { at: at(5), text: "Tests started on Worker 2" },
+        { at: at(6), text: "Security finished: 1 to review" },
+        { at: at(6), text: "Reliability started on Worker 1" },
+        { at: at(7), text: "Tests finished: 1 to review" },
+        { at: at(7), text: "Code quality started on Worker 2" },
+      ],
+    };
   }
 
   // Made-up results for a plain browser, so the screen can be looked at outside Araniko.
