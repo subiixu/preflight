@@ -48,7 +48,20 @@ svg.i { width: 16px; height: 16px; flex: none; display: block; }
 #headline[data-verdict="blocked"] { color: var(--pf-blocked); }
 #headline[data-verdict="review"] { color: var(--pf-review); }
 #headline[data-verdict="cleared"] { color: var(--pf-cleared); }
+#headline[data-verdict="running"]::before {
+  content: ""; display: inline-block; width: 18px; height: 18px; margin-right: 10px; vertical-align: -1px;
+  border: 2.5px solid var(--pf-input); border-top-color: var(--pf-running); border-radius: 50%;
+  animation: pf-spin 0.9s linear infinite;
+}
+@keyframes pf-spin { to { transform: rotate(360deg); } }
+@keyframes pf-pulse { 50% { opacity: 0.35; } }
+.row-score.running { animation: pf-pulse 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  #headline[data-verdict="running"]::before { animation-duration: 4s; }
+  .row-score.running { animation: none; }
+}
 #summary { margin-top: 3px; color: var(--pf-muted); font-size: 15px; }
+#finish { margin-top: 6px; text-decoration: underline; text-underline-offset: 3px; }
 .actions { display: flex; gap: 10px; }
 
 .primary {

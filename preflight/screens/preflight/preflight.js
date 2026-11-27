@@ -1,12 +1,14 @@
 // Preflight tab: pick checks, send the run to Nayo, show the results.
 // Uses window.araniko (araniko.js, given by Araniko). Opened in a plain browser,
-// it shows sample results so the screen can be tried (?state=empty for a first run).
+// it shows sample results so the screen can be tried (?state=empty for a first run,
+// ?state=running for a run in progress).
 (function () {
   "use strict";
 
   var A = window.araniko || null;
   var DEMO = !A;
   var POLL_MS = 20000;
+  var RUN_MAX_MS = 3 * 60 * 60 * 1000;
 
   var CHECKS = [
     { id: "security", name: "Security", hint: "Keys, logins, who can see what" },
@@ -67,12 +69,27 @@
   function save(key, value) {
     if (store) store.set(key, value).catch(function () {});
   }
+  // araniko.storage.get answers {value}; take the value out (null when nothing is kept).
+  function load(key) {
+    return store.get(key).then(function (r) {
+      return r && typeof r === "object" && !Array.isArray(r) && "value" in r ? r.value : r;
+    });
+  }
+  function ago(iso) {
+    var m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+    if (m < 1) return "just now";
+    if (m < 60) return m + " min ago";
+    var h = Math.floor(m / 60), r = m % 60;
+    return h + " h" + (r ? " " + r + " min" : "") + " ago";
+  }
 
   // ---------- State of the latest run ----------
   function lastRun() { return s.runs[0] || null; }
   function running() {
     var r = lastRun();
-    if (!r) return false;
+    if (!r || r.done) return false;
+    // Without results to read, the tab can't see a run end: stop showing it after a while.
+    if (!s.canRead && !DEMO && Date.now() - new Date(r.at).getTime() > RUN_MAX_MS) return false;
     if (!s.results || !s.results.started_at) return true;
     return new Date(r.at) > new Date(s.results.started_at);
   }
@@ -83,14 +100,13 @@
   // ---------- Header ----------
   function renderHead() {
     var h = $("headline"), p = $("summary"), r = s.results, run = lastRun();
-    if (running() && (s.canRead || DEMO)) {
+    $("finish").hidden = !running() || s.canRead || DEMO;
+    if (running()) {
       h.dataset.verdict = "running";
       h.textContent = "Checking " + run.checks.length + (run.checks.length === 1 ? " thing" : " things");
-      p.textContent = "Started " + time(run.at).toLowerCase() + ". Results show here when Nayo is done.";
-    } else if (running()) {
-      h.dataset.verdict = "running";
-      h.textContent = "Checks sent to Nayo";
-      p.textContent = "Sent " + time(run.at).toLowerCase() + ". Nayo replies with the verdict when it's done, and the full report is saved in .araniko/plugins/preflight/report.md.";
+      p.textContent = "Started " + ago(run.at) + ". " + (s.canRead || DEMO
+        ? "Results show here when Nayo is done."
+        : "Nayo is working on it and replies in its tab with the verdict.");
     } else if (r) {
       h.dataset.verdict = r.verdict || "none";
       h.textContent = r.headline || "Results";
@@ -101,8 +117,8 @@
       p.textContent = "Pick what to check, then press Run. Nayo does the work and Preflight reports back.";
     }
     var n = s.picked.length;
-    $("runLabel").textContent = s.sending ? "Sending…" : n ? "Run " + n + (n === 1 ? " check" : " checks") : "Pick a check";
-    $("run").disabled = s.sending || !n;
+    $("runLabel").textContent = s.sending ? "Sending…" : running() ? "Checks running" : n ? "Run " + n + (n === 1 ? " check" : " checks") : "Pick a check";
+    $("run").disabled = s.sending || running() || !n;
   }
 
   // ---------- Summary cards ----------
@@ -131,13 +147,14 @@
     var runningIds = running() ? lastRun().checks : [];
     CHECKS.forEach(function (c) {
       var res = checkResult(c.id);
-      var isRunning = runningIds.indexOf(c.id) !== -1 && (s.canRead || DEMO);
+      var isRunning = runningIds.indexOf(c.id) !== -1;
       var row = el("div", "row" + (s.filter === c.id ? " selected" : ""));
 
       var box2 = document.createElement("input");
       box2.type = "checkbox";
       box2.checked = s.picked.indexOf(c.id) !== -1;
       box2.setAttribute("aria-label", "Include " + c.name);
+      box2.disabled = running();
       box2.addEventListener("change", function () {
         s.picked = box2.checked ? s.picked.concat(c.id) : s.picked.filter(function (x) { return x !== c.id; });
         s.picked = CHECKS.map(function (x) { return x.id; }).filter(function (x) { return s.picked.indexOf(x) !== -1; });
@@ -151,7 +168,7 @@
       main.title = res ? "Show only " + c.name + " findings" : c.hint;
       var text = el("span", "row-text");
       text.appendChild(el("span", "row-name", c.name));
-      var sub = isRunning ? "Running" : res ? (STATUS_WORD[res.status] || "") + (res.summary ? " · " + res.summary : "") : s.results ? "Not run" : c.hint;
+      var sub = isRunning ? "Running" : running() ? "Not in this run" : res ? (STATUS_WORD[res.status] || "") + (res.summary ? " · " + res.summary : "") : s.results ? "Not run" : c.hint;
       text.appendChild(el("span", "row-sub", sub));
       main.appendChild(text);
       var score = isRunning ? "…" : res && res.score != null ? String(res.score) : "–";
@@ -179,7 +196,13 @@
 
     if (!s.results) {
       var e = el("div", "empty");
-      if (!s.canRead && !DEMO && lastRun()) {
+      if (running()) {
+        e.appendChild(el("strong", null, "Checks are running"));
+        e.appendChild(document.createTextNode(s.canRead || DEMO
+          ? "Findings show up here as soon as Nayo finishes."
+          : "A full check can take a while. Nayo replies in its tab with the verdict, and the full report is saved in "));
+        if (!s.canRead && !DEMO) { e.appendChild(el("code", null, ".araniko/plugins/preflight/report.md")); e.appendChild(document.createTextNode(".")); }
+      } else if (!s.canRead && !DEMO && lastRun()) {
         e.appendChild(el("strong", null, "Results are with Nayo"));
         e.appendChild(document.createTextNode("This version of Araniko can't show reports inside the tab yet. Read Nayo's reply, or open "));
         e.appendChild(el("code", null, ".araniko/plugins/preflight/report.md"));
@@ -317,7 +340,7 @@
   // araniko.files.read(name), limited to .araniko/plugins/<plugin>/. Until it exists the
   // tab launches runs and points to the report; when it does, results show up here.
   function loadResults() {
-    if (DEMO) return Promise.resolve(/[?&]state=empty\b/.test(location.search) ? null : SAMPLE);
+    if (DEMO) return Promise.resolve(/[?&]state=(empty|running)\b/.test(location.search) ? null : SAMPLE);
     if (!s.canRead) return Promise.resolve(null);
     return A.files.read("results.json").then(function (text) {
       if (!text) return null;
@@ -341,6 +364,15 @@
     render();
   });
   $("showAll").addEventListener("click", function () { s.filter = null; render(); });
+  $("finish").addEventListener("click", function () {
+    if (!lastRun()) return;
+    s.runs[0].done = true;
+    save("runs", s.runs);
+    setStatus("");
+    render();
+  });
+  // Keeps "Started 12 min ago" fresh while a run is going.
+  setInterval(function () { if (lastRun() && !lastRun().done && !document.hidden) render(); }, 30000);
   (function () {
     var b = $("run"), i = icon("send"), slot = b.querySelector("[data-icon]");
     if (i && slot) slot.replaceWith(i);
@@ -355,9 +387,12 @@
       }, function () {}));
     }
     if (store) {
-      loads.push(store.get("picked").then(function (v) { if (Array.isArray(v)) s.picked = v; }, function () {}));
-      loads.push(store.get("runs").then(function (v) { if (Array.isArray(v)) s.runs = v; }, function () {}));
-      loads.push(store.get("fixes").then(function (v) { if (v && typeof v === "object") s.fixes = v; }, function () {}));
+      loads.push(load("picked").then(function (v) { if (Array.isArray(v)) s.picked = v; }, function () {}));
+      loads.push(load("runs").then(function (v) { if (Array.isArray(v)) s.runs = v; }, function () {}));
+      loads.push(load("fixes").then(function (v) { if (v && typeof v === "object" && !Array.isArray(v)) s.fixes = v; }, function () {}));
+    }
+    if (DEMO && /[?&]state=running\b/.test(location.search)) {
+      s.runs = [{ at: new Date(Date.now() - 12 * 60000).toISOString(), checks: s.picked.slice(0, 6) }];
     }
     render();
     Promise.all(loads).then(refresh);

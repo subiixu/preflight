@@ -2,7 +2,7 @@ name: preflight
 title: Preflight
 summary: Checks your whole app before launch, then says if you're cleared to ship
 author: Subaz
-version: 0.1.2
+version: 0.1.3
 icon: AirplaneTakeOff01Icon
 logo: logo.svg
 category: feedback-testing
