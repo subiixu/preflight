@@ -77,9 +77,10 @@ When every worker is done, you (not a worker) write the results in the main chec
 
    ```json
    {
-     "version": 1,
+     "version": 2,
      "started_at": "2026-11-27T14:14:00+11:00",
      "finished_at": "2026-11-27T14:41:00+11:00",
+     "settings": { "audience": "The public", "depth": "Thorough" },
      "verdict": "blocked",
      "headline": "Launch blocked",
      "summary": "Fix the 3 critical issues before continuing.",
@@ -93,13 +94,41 @@ When every worker is done, you (not a worker) write the results in the main chec
          "title": "Payment secret key is sent to the browser",
          "detail": "Anyone could read it from the app and charge cards.",
          "fix": "Move the charge call into a server route and read the key from the server's environment only.",
-         "where": "src/lib/pay.ts:12", "confidence": "sure", "effort": "S", "state": "open"
+         "where": "src/lib/pay.ts:12", "confidence": "sure", "effort": "S", "state": "open",
+         "note": "Also reported as bugs-2."
        }
-     ]
+     ],
+     "decisions": [
+       {
+         "id": "public",
+         "question": "Is this app really open to the public?",
+         "detail": "Two plain sentences: what you found, and which findings depend on the answer.",
+         "findings": ["launch-basics-1", "launch-basics-2"],
+         "options": [
+           { "label": "Open it to the public properly", "brief": "What Nayo should do if the user picks this, in two or three sentences." },
+           { "label": "Keep it private, turn sign-ups off", "brief": "What Nayo should do if the user picks this." }
+         ]
+       },
+       { "id": "backups", "question": "Backups and a separate dev database", "detail": "Both cost money on Supabase.", "findings": ["database-1"], "options": [] }
+     ],
+     "quick_wins": ["tests-2", "ux-3"],
+     "order": [
+       { "title": "Safety net first", "text": "One or two plain sentences.", "findings": ["tests-2", "tests-1"] }
+     ],
+     "patterns": [ { "title": "Failures stop at the throw", "text": "One or two plain sentences: what's going on, and what good looks like." } ],
+     "not_now": [ "One line each: the thing, and why it can wait." ],
+     "strengths": [ "One line each." ],
+     "limits": [ "One line each: what couldn't be checked or got a lighter look, and why." ],
+     "notes": [ "Anything you changed while putting it together, like merged duplicates or a level you changed." ]
    }
    ```
 
-   Only list checks that were picked. `state` is `open` for every new finding.
+   Only list checks that were picked. `state` is `open` for every new finding. Every list holds the same things as the matching section of `report.md` (see below), so the Preflight tab can show the whole report:
+
+   - `decisions` is "Only you can decide". Put the one that most changes what to fix first. Give `options` only when the choices are clear and each one is something Nayo can do; each option's `brief` is what gets sent to Nayo if the user picks it. Otherwise leave `options` empty.
+   - `quick_wins` lists finding ids with effort `S` that help most, best first, at most 8.
+   - `order` is the suggested order. Each step names the findings it covers, if any.
+   - Keep every text short and plain: the tab shows them as they are.
 
 2. `.araniko/plugins/preflight/report.md`: the same results for a person to read, in this order. Skip a section that has nothing in it.
    - The headline and summary.
@@ -148,4 +177,10 @@ When a brief says "Fix Preflight finding `<id>`":
 1. Read that finding in `results.json`.
 2. Fix only that problem, in the smallest change that solves it, and run the project's checks. Start from the finding's `fix`, but check it still fits the code as it is now.
 3. Re-check just that finding the way its check guide says.
-4. In `results.json`, set the finding's `state` to `fixed` if it's solved, or leave it `open` and add a `note` saying what's left. Work the verdict, check scores and overall score out again with the rules above, counting only `open` findings.
+4. In `results.json`, set the finding's `state` to `fixed` if it's solved, or leave it `open` and add a `note` saying what's left. Work the verdict, check scores and overall score out again with the rules above, counting only `open` findings. Update `report.md` to match.
+
+A brief may name several findings ("Fix Preflight findings `a`, `b` and `c`"). Fix them one at a time, as above, in the order given, and run the project's checks after each one.
+
+## Acting on a decision
+
+When a brief says "Preflight decision `<id>`: <the option's label>", do what the option's brief describes. Then remove that decision from `decisions` in `results.json` and `report.md`, and update any findings it settled.

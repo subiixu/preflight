@@ -15,9 +15,9 @@ The plugin is in [`preflight/`](preflight/). What it does for users is in its [R
 
 Preflight only reports. Nothing in your project is changed until you press **Fix this** on a finding.
 
-## One gap today
+## Reading results
 
-A plugin screen can't read project files yet, so the tab can start runs and send fixes, but results arrive in Nayo's reply and `.araniko/plugins/preflight/report.md`. [`docs/results-api.md`](docs/results-api.md) proposes a small read-only call that fixes this. The screen already uses it when it's there.
+The tab reads `results.json` with `can: files: read`, which lets a plugin screen read only its own folder, `.araniko/plugins/<name>/`, in the project. Araniko gained it for Preflight: see [`docs/results-api.md`](docs/results-api.md). On an older Araniko the tab still starts runs and sends fixes, and points to `report.md` for the results.
 
 ## Try it
 

@@ -2,12 +2,12 @@ name: preflight
 title: Preflight
 summary: Checks your whole app before launch, then says if you're cleared to ship
 author: Subaz
-version: 0.1.3
+version: 0.2.0
 icon: AirplaneTakeOff01Icon
 logo: logo.svg
 category: feedback-testing
 needs:
-  araniko: ">=2.17.1"
+  araniko: ">=2.18.0"
 settings:
   - key: audience
     label: Who will use it
@@ -28,3 +28,4 @@ screens:
 can:
   send_briefs: true
   storage: true
+  files: read        # read the report Nayo writes in .araniko/plugins/preflight/

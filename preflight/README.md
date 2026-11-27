@@ -19,7 +19,9 @@ Pick what to check in the Preflight tab:
 
 Press Run and Preflight hands the work to Nayo, one check per worker. It only reports. Nothing is fixed until you press **Fix this** on a finding, which sends Nayo a brief for that one thing.
 
-Each finding points to the file it's about, explains the problem in plain words, and says how to fix it. The full report also lists quick wins, the patterns behind the findings, a suggested order to fix things in, and what your project already does well. Database checks read your schema and access rules. They never connect to your live database.
+Results show up in the Preflight tab as soon as Nayo finishes: the verdict and score, any decision only you can make, what's blocking launch, quick wins you can send to Nayo in one go, and the rest grouped by check. Each finding points to the file it's about, explains the problem in plain words, and says how to fix it. A Plan view gives a suggested order and the patterns behind the findings, and "About this run" shows what your project already does well and what Preflight couldn't check.
+
+Preflight asks Araniko for one permission beyond sending briefs and keeping your picks: reading the reports its own agents write in `.araniko/plugins/preflight/`. It can't see anything else in your project. Database checks read your schema and access rules. They never connect to your live database.
 
 ## What it adds to your project
 
