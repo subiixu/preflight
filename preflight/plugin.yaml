@@ -2,11 +2,10 @@ name: preflight
 title: Preflight
 summary: Checks your whole app before launch, then says if you're cleared to ship
 author: Subaz
-version: 0.1.0
+version: 0.1.1
 icon: AirplaneTakeOff01Icon
+logo: logo.svg
 category: feedback-testing
-needs:
-  araniko: ">=2.16.0"
 settings:
   - key: audience
     label: Who will use it
