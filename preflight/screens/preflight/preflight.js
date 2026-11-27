@@ -746,7 +746,7 @@
       if (!text) return null;
       var r = typeof text === "string" ? JSON.parse(text) : text;
       return r && (r.version === 1 || r.version === 2) && Array.isArray(r.findings) ? r : null;
-    }).catch(function () { return null; });
+    }).catch(function (e) { readFailed("results.json", e); return null; });
   }
   function loadProgress() {
     if (DEMO) { s.progress = /[?&]state=running\b/.test(location.search) ? demoProgress() : null; return Promise.resolve(); }
@@ -762,10 +762,17 @@
           s.steps[id] = t ? (typeof t === "string" ? JSON.parse(t) : t) : null;
         }, function () { s.steps[id] = null; });
       }));
-    }).catch(function () { s.progress = null; });
+    }).catch(function (e) { readFailed("progress.json", e); s.progress = null; });
+  }
+  // A read that fails is shown, not hidden, so a wrong setup can be seen and fixed.
+  function readFailed(file, e) {
+    var m = (e && (e.message || e)) + "";
+    s.readError = file + ": " + (m && m !== "undefined" ? m : "unknown error");
+    try { console.warn("[Preflight] couldn't read " + file, e); } catch (x) { /* no console */ }
   }
   var last = "";
   function refresh() {
+    s.readError = "";
     return Promise.all([loadResults(), lastRun() && !lastRun().done ? loadProgress() : null]).then(function (both) {
       var r = both[0];
       var key = r ? (r.finished_at || "") + ":" + JSON.stringify(r).length : "";
@@ -783,6 +790,11 @@
       }
       if (s.filter && !R.check(s.filter)) s.filter = null;
       render();
+      if (s.readError) setStatus("Preflight couldn't read its reports in this project (" + s.readError + ").", true);
+      else if ($("status").classList.contains("bad") && /couldn't read its reports/.test($("status").textContent)) setStatus("");
+    }).catch(function (e) {
+      setStatus("Preflight hit a problem showing this run: " + ((e && e.message) || e) + ".", true);
+      try { console.error("[Preflight]", e); } catch (x) { /* no console */ }
     });
   }
 
