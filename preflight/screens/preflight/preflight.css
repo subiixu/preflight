@@ -1,0 +1,122 @@
+/* Preflight tab. Colours come from Araniko's tokens (araniko.js serves them);
+   the fallbacks keep it working when opened in a plain browser. */
+:root {
+  --pf-app: var(--surface-app, #0e131a);
+  --pf-card: var(--surface-card, #151b23);
+  --pf-hover: var(--surface-hover, #1b222c);
+  --pf-line: var(--border-card, #222a34);
+  --pf-input: var(--border-input, #343b45);
+  --pf-text: var(--text-primary, #f4f1ea);
+  --pf-muted: var(--text-muted, #a7adb5);
+  --pf-faint: var(--text-faint, #8e959e);
+  --pf-blocked: #f2938b;
+  --pf-review: #f2b544;
+  --pf-cleared: #6fcf97;
+  --pf-running: var(--blue, #7cc4f0);
+  --pf-sans: var(--font-sans, Inter, -apple-system, system-ui, sans-serif);
+  --pf-mono: var(--font-mono, "IBM Plex Mono", ui-monospace, Menlo, monospace);
+}
+html[data-theme="light"] {
+  --pf-app: #f7f7f5;
+  --pf-card: #ffffff;
+  --pf-hover: #f1f1ee;
+  --pf-line: #e2e2de;
+  --pf-input: #d6d6d1;
+  --pf-text: #1b1e22;
+  --pf-muted: #5e646c;
+  --pf-faint: #6b7178;
+  --pf-blocked: #c2413a;
+  --pf-review: #94600f;
+  --pf-cleared: #237a4b;
+  --pf-running: #2f6fd6;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--pf-app); color: var(--pf-text); }
+body { font-family: var(--pf-sans); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; cursor: pointer; }
+h1, h2, p { margin: 0; }
+svg.i { width: 16px; height: 16px; flex: none; display: block; }
+[hidden] { display: none !important; }
+
+.app { max-width: 1180px; margin: 0 auto; padding: 28px; display: flex; flex-direction: column; gap: 22px; }
+
+.head { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.mark { width: 52px; height: auto; flex: none; }
+.verdict { flex: 1 1 360px; min-width: 0; }
+#headline { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
+#headline[data-verdict="blocked"] { color: var(--pf-blocked); }
+#headline[data-verdict="review"] { color: var(--pf-review); }
+#headline[data-verdict="cleared"] { color: var(--pf-cleared); }
+#summary { margin-top: 3px; color: var(--pf-muted); font-size: 15px; }
+.actions { display: flex; gap: 10px; }
+
+.primary {
+  height: 40px; padding: 0 18px; border: 0; border-radius: 8px;
+  background: var(--pf-text); color: var(--pf-app); font-weight: 600;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.primary:disabled { opacity: 0.45; cursor: default; }
+.ghost {
+  height: 34px; padding: 0 14px; border-radius: 8px; flex: none;
+  background: transparent; border: 1px solid var(--pf-input); font-size: 13px;
+}
+.ghost:hover { background: var(--pf-hover); }
+.ghost.sent { color: var(--pf-cleared); cursor: default; }
+.link { background: none; border: 0; padding: 0; color: var(--pf-muted); font-size: 13px; }
+.link:hover { color: var(--pf-text); }
+:focus-visible { outline: 2px solid var(--pf-running); outline-offset: 2px; }
+
+.status { min-height: 0; color: var(--pf-muted); font-size: 13px; }
+.status:empty { display: none; }
+.status.bad { color: var(--pf-blocked); }
+
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.stat { background: var(--pf-card); border: 1px solid var(--pf-line); border-radius: 12px; padding: 14px 18px; }
+.stat-label { font-size: 13px; color: var(--pf-muted); }
+.stat-value { font-size: 28px; font-weight: 600; margin-top: 2px; }
+.stat-value.small { font-size: 16px; font-weight: 500; margin-top: 8px; }
+.stat-value.blocked { color: var(--pf-blocked); }
+.stat-value .of { font-size: 14px; font-weight: 400; color: var(--pf-faint); }
+
+.cols { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+.checks-col { flex: 1 1 320px; min-width: 0; }
+.findings-col { flex: 1.4 1 420px; min-width: 0; }
+.col-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+h2 { font-size: 15px; font-weight: 600; }
+.card { background: var(--pf-card); border: 1px solid var(--pf-line); border-radius: 12px; overflow: hidden; }
+.note { margin-top: 10px; font-size: 12px; color: var(--pf-faint); }
+
+.row { display: flex; align-items: center; gap: 12px; padding: 11px 16px; border-bottom: 1px solid var(--pf-line); }
+.row:last-child { border-bottom: 0; }
+.row.selected { background: var(--pf-hover); }
+.row input { width: 16px; height: 16px; margin: 0; accent-color: var(--pf-running); flex: none; }
+.row-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; background: none; border: 0; padding: 0; text-align: left; }
+.row-text { flex: 1; min-width: 0; }
+.row-name { display: block; }
+.row-sub { display: block; font-size: 12px; color: var(--pf-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-score { min-width: 28px; text-align: right; font-weight: 500; }
+.row-score.none { color: var(--pf-faint); }
+.row-score.running { color: var(--pf-running); }
+
+.findings { padding: 0 18px; }
+.group { margin: 0; padding: 16px 0 2px; font-size: 13px; font-weight: 600; }
+.group + .finding { border-top: 0; }
+.group:not(:first-child) { border-top: 1px solid var(--pf-line); padding-top: 20px; }
+.group.blocking { color: var(--pf-blocked); }
+.group.review { color: var(--pf-review); }
+.group.fixed { color: var(--pf-cleared); }
+.finding { display: flex; gap: 16px; align-items: flex-start; padding: 12px 0 16px; border-top: 1px solid var(--pf-line); }
+.f-main { flex: 1; min-width: 0; }
+.f-title { font-weight: 500; }
+.f-detail { font-size: 13px; color: var(--pf-muted); margin-top: 2px; }
+.f-where { font-family: var(--pf-mono); font-size: 12px; color: var(--pf-faint); margin-top: 4px; overflow-wrap: anywhere; }
+.f-check { font-size: 12px; color: var(--pf-faint); margin-top: 2px; }
+.empty { padding: 28px 0; color: var(--pf-muted); font-size: 13px; }
+.empty strong { display: block; color: var(--pf-text); font-weight: 500; font-size: 14px; margin-bottom: 4px; }
+.empty code { font-family: var(--pf-mono); font-size: 12px; }
+
+@media (max-width: 720px) {
+  .app { padding: 18px; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

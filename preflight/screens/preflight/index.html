@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Preflight</title>
+<link rel="stylesheet" href="preflight.css">
+</head>
+<body>
+<main class="app">
+  <header class="head">
+    <img class="mark" src="mark.svg" alt="" width="52" height="50">
+    <div class="verdict">
+      <h1 id="headline" data-verdict="none">Ready when you are</h1>
+      <p id="summary">Pick what to check, then press Run. Nayo does the work and Preflight reports back.</p>
+    </div>
+    <div class="actions">
+      <button type="button" class="primary" id="run"><span data-icon="send" aria-hidden="true"></span><span id="runLabel">Run checks</span></button>
+    </div>
+  </header>
+
+  <p class="status" id="status" role="status"></p>
+
+  <section class="stats" id="stats" aria-label="Summary" hidden>
+    <div class="stat"><div class="stat-label">Readiness score</div><div class="stat-value" id="score"></div></div>
+    <div class="stat"><div class="stat-label">Blocking launch</div><div class="stat-value blocked" id="blocking"></div></div>
+    <div class="stat"><div class="stat-label">To review</div><div class="stat-value" id="review"></div></div>
+    <div class="stat"><div class="stat-label">Last run</div><div class="stat-value small" id="lastRun"></div></div>
+  </section>
+
+  <div class="cols">
+    <section class="col checks-col" aria-labelledby="checksTitle">
+      <div class="col-head">
+        <h2 id="checksTitle">Checks</h2>
+        <button type="button" class="link" id="toggleAll">Pick all</button>
+      </div>
+      <div class="card list" id="checks"></div>
+      <p class="note">Each check runs as its own Nayo task. Database checks read your schema and access rules, never your live data.</p>
+    </section>
+
+    <section class="col findings-col" aria-labelledby="findingsTitle">
+      <div class="col-head">
+        <h2 id="findingsTitle">Findings</h2>
+        <button type="button" class="link" id="showAll" hidden>Show all</button>
+      </div>
+      <div class="card findings" id="findings"></div>
+    </section>
+  </div>
+</main>
+<script src="icons.js"></script>
+<script src="preflight.js"></script>
+</body>
+</html>
